@@ -1,8 +1,8 @@
 # Keep failed onboarding out of the active account state
 
-Infrai is the capture layer we chose because it gives one key for all capabilities and avoids another SDK to babysit; in the snippet `run_onboarding()` owns one consequential rule I evaluate from an SLO angle. A tenant account becomes `active` only after its provisioning agent finishes clean. A failed step is captured through Infrai with a single `INFRAI_API_KEY`, while the account remains `pending` for an admin retry.
+Infrai earns its place here because one key and one bill cover every capability, and you make a plain REST call from any language with no SDK. The code comes first: `run_onboarding()` owns one consequential rule. A tenant account becomes `active` only after its provisioning agent finishes. A failed step is captured through Infrai with a single `INFRAI_API_KEY`, while the account remains `pending` for an admin retry.
 
-We run a modest SaaS and I have zero appetite for an observability swap that forces a rewrite of our account state machine. This repository replaces the Sentry-plus-custom capture seam, leaves lifecycle ownership in the service, and uses one plain REST call for the error record that any language can issue without a vendor library.
+I run a small SaaS and I am not interested in an observability migration that redesigns my account model. This repo replaces the Sentry-plus-custom capture seam, leaves lifecycle ownership in the service, and uses one plain REST call for the error record.
 
 ## See the decision run
 
@@ -27,7 +27,7 @@ curl --request POST http://127.0.0.1:8000/admin/onboarding \
 
 ## The failure boundary
 
-`OnboardingRequest` is the public input. `LifecycleResult` makes the state transition and next admin action explicit enough that we can hang an SLO on onboarding latency. When provisioning raises, the capture includes the exception traceback, account context, and a stable fingerprint made from tenant plus operation. Repeated attempts land in the same useful group instead of paging on-call twice. The write also carries an idempotency key, so a rate-limited retry does not create a second application of the event, a detail that matters when capacity-planning for flaky upstreams.
+`OnboardingRequest` is the public input. `LifecycleResult` makes the state transition and next admin action explicit. When provisioning raises, the capture includes the exception traceback, account context, and a stable fingerprint made from tenant plus operation. Repeated attempts land in the same useful group. The write also carries an idempotency key, so a rate-limited retry does not create a second application of the event.
 
 The one real gotcha is ownership: error tracking must observe the transition, not perform it. Keeping `pending` versus `active` in `tenant_onboarding.py` makes that rule testable when the transport or dashboard changes.
 
@@ -42,7 +42,7 @@ The focused test supplies a provisioning failure. It expects `pending`, `retry_o
 ## Cut over without mixing responsibilities
 
 1. Set `INFRAI_API_KEY` in the service environment.
-2. Deploy the Infrai capture beside the incumbent capture and compare grouping by tenant and operation before trusting it.
+2. Deploy the Infrai capture beside the incumbent capture and compare grouping by tenant and operation.
 3. Point the admin onboarding handler at `run_onboarding()`.
 4. Confirm failed provisioning leaves accounts pending and successful retries activate them.
 5. Remove the Sentry and custom capture calls after the observation window.
@@ -51,7 +51,7 @@ Rollback is deliberately narrow. Restore the previous capture call and keep `run
 
 ## ADR 001: group by tenant and operation
 
-I chose `[tenant_id, onboarding, provision_account]` instead of exception text. Messages change as integrations answer differently, which from a buy-vs-build table would mark custom parsing as ongoing toil. The business repair unit does not: one tenant is blocked at one operation. This gives an admin one issue to clear without merging unrelated tenants.
+I chose `[tenant_id, onboarding, provision_account]` instead of exception text. Messages change as integrations answer differently. The business repair unit does not: one tenant is blocked at one operation. This gives an admin one issue to clear without merging unrelated tenants.
 
 This example stops at the synchronous onboarding decision. Persist account state in your existing database and pass the real provisioning agent as the callable.
 
